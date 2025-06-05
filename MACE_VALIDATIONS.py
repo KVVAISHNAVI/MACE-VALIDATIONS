@@ -17,18 +17,16 @@ if kna1_file and knvv_file and mace_file:
             # Read KNA1: header at row 4 (index 4), skip blank row 5 (index 5)
             df_kna1 = pd.read_excel(kna1_file, header=4, skiprows=[5])
             df_kna1.columns = df_kna1.columns.str.strip()
-            df_kna1 = df_kna1.loc[:, df_kna1.columns != '']
-            if 'Unnamed: 0' in df_kna1.columns:
-                df_kna1 = df_kna1.drop(columns=['Unnamed: 0'])
+            # Remove all unnamed or empty columns
+            df_kna1 = df_kna1.loc[:, ~df_kna1.columns.str.contains('^Unnamed') & (df_kna1.columns != '')]
             st.write("KNA1 columns:", df_kna1.columns.tolist())
             st.dataframe(df_kna1.head())
 
             # Read KNVV: header at row 4 (index 4), skip blank row 5 (index 5)
             df_knvv = pd.read_excel(knvv_file, header=4, skiprows=[5])
             df_knvv.columns = df_knvv.columns.str.strip()
-            df_knvv = df_knvv.loc[:, df_knvv.columns != '']
-            if 'Unnamed: 0' in df_knvv.columns:
-                df_knvv = df_knvv.drop(columns=['Unnamed: 0'])
+            # Remove all unnamed or empty columns
+            df_knvv = df_knvv.loc[:, ~df_knvv.columns.str.contains('^Unnamed') & (df_knvv.columns != '')]
             st.write("KNVV columns:", df_knvv.columns.tolist())
             st.dataframe(df_knvv.head())
 
@@ -57,7 +55,7 @@ if kna1_file and knvv_file and mace_file:
                 st.error("One or more required customer ID columns not found!")
                 st.stop()
 
-            # Clean data
+            # Clean data - remove empty or NaN customer IDs
             df_kna1_clean = df_kna1[df_kna1[kna1_customer_col].notna() & (df_kna1[kna1_customer_col].astype(str).str.strip() != '')]
             df_knvv_clean = df_knvv[df_knvv[knvv_customer_col].notna() & (df_knvv[knvv_customer_col].astype(str).str.strip() != '')]
             df_mace_clean = df_mace[df_mace[mace_customer_col].notna() & (df_mace[mace_customer_col].astype(str).str.strip() != '')]
@@ -73,11 +71,12 @@ if kna1_file and knvv_file and mace_file:
             st.write("MACE cleaned preview:")
             st.dataframe(df_mace_clean.head())
 
-            # Customer sets
+            # Create sets of customer IDs (stripped)
             kna1_customers = set(df_kna1_clean[kna1_customer_col].astype(str).str.strip())
             knvv_customers = set(df_knvv_clean[knvv_customer_col].astype(str).str.strip())
             mace_customers = set(df_mace_clean[mace_customer_col].astype(str).str.strip())
 
+            # Find differences
             df_diff1 = pd.DataFrame(sorted(kna1_customers - knvv_customers), columns=["Customer_Not_in_KNVV"])
             df_diff2 = pd.DataFrame(sorted(knvv_customers - mace_customers), columns=["Customer_Not_in_MACE"])
 
@@ -93,7 +92,7 @@ if kna1_file and knvv_file and mace_file:
             st.subheader("❗ Customers in KNVV but NOT in MACE")
             st.dataframe(df_diff2_display, use_container_width=True)
 
-            # Excel export
+            # Excel export function
             def to_excel(df1, df2):
                 output = BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
