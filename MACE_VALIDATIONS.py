@@ -228,7 +228,7 @@ with tabs[1]:
 # ---------- TAB 3: KNVV vs KNVP ----------
 # ---------- TAB 3: KNVV vs KNVP ----------
 with tabs[2]:
-    st.header("📦 Upload KNVV and KNVP Files")
+    st.header("📤 Upload KNVV and KNVP Files")
     knvv_file_tab3 = st.file_uploader("Upload KNVV Excel", type=["xlsx"], key="knvv_tab3")
     knvp_file = st.file_uploader("Upload KNVP Excel", type=["xlsx"], key="knvp")
 
