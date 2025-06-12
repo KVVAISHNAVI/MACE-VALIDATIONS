@@ -5,7 +5,8 @@ from io import BytesIO
 st.set_page_config(layout="wide")
 st.title("🔍 Customer Validation Tool")
 
-tabs = st.tabs(["📄 KNA1 vs KNVV", "📄 KNA1+KNVV vs MACE"])
+tabs = st.tabs(["📄 KNA1 vs KNVV", "📄 KNA1+KNVV vs MACE", "📄 KNVV vs KNVP"])
+
 
 # ---------- TAB 1: KNA1 vs KNVV ----------
 with tabs[0]:
@@ -224,3 +225,92 @@ with tabs[1]:
                     return output
 
                 st.download_button("⬇️ Download MACE_kna1+knvv Comparison Result", download_excel(df_not_in_mace, df_not_in_merged), file_name="mace_kna1+knvv_comparison.xlsx")
+# ---------- TAB 3: KNVV vs KNVP ----------
+# ---------- TAB 3: KNVV vs KNVP ----------
+with tabs[2]:
+    st.header("📦 Upload KNVV and KNVP Files")
+    knvv_file_tab3 = st.file_uploader("Upload KNVV Excel", type=["xlsx"], key="knvv_tab3")
+    knvp_file = st.file_uploader("Upload KNVP Excel", type=["xlsx"], key="knvp")
+
+    if knvv_file_tab3 and knvp_file:
+        if st.button("🔍 Compare KNVV vs KNVP", key="compare_knvv_knvp"):
+            with st.spinner("Processing..."):
+                try:
+                    df_knvv = pd.read_excel(knvv_file_tab3, header=4, skiprows=[5])
+                    df_knvp = pd.read_excel(knvp_file, header=4, skiprows=[5])
+
+                    df_knvv.columns = df_knvv.columns.str.strip()
+                    df_knvp.columns = df_knvp.columns.str.strip()
+
+                    df_knvv = df_knvv.loc[:, ~df_knvv.columns.str.contains('^Unnamed', case=False) & (df_knvv.columns.str.strip() != '')]
+                    df_knvp = df_knvp.loc[:, ~df_knvp.columns.str.contains('^Unnamed', case=False) & (df_knvp.columns.str.strip() != '')]
+
+                    df_knvv = clean_all_text_columns(df_knvv)
+                    df_knvp = clean_all_text_columns(df_knvp)
+
+                    # Detect Customer column
+                    customer_col_knvv = find_column(df_knvv, "Customer")
+                    customer_col_knvp = find_column(df_knvp, "Customer")
+
+                    df_knvv_clean = df_knvv[df_knvv[customer_col_knvv] != '']
+                    df_knvp_clean = df_knvp[df_knvp[customer_col_knvp] != '']
+
+                    comparison_columns = ["Sales Org.", "Distr. Channel", "Division"]
+
+                    mismatched_rows = []
+                    reasons = []
+
+                    knvp_grouped = df_knvp_clean.groupby(customer_col_knvp)
+
+                    for idx, row in df_knvv_clean.iterrows():
+                        cust_id = str(row[customer_col_knvv]).strip()
+                        found_match = False
+                        mismatch_fields = []
+
+                        if cust_id in knvp_grouped.groups:
+                            knvp_matches = knvp_grouped.get_group(cust_id)
+
+                            for _, knvp_row in knvp_matches.iterrows():
+                                mismatches = []
+                                for col in comparison_columns:
+                                    if col in row and col in knvp_row:
+                                        val_knvv = str(row[col]).strip()
+                                        val_knvp = str(knvp_row[col]).strip()
+                                        if val_knvv != val_knvp:
+                                            mismatches.append(col)
+
+                                if not mismatches:
+                                    found_match = True
+                                    break  # Exact match found, skip further check
+
+                                if not mismatch_fields:
+                                    mismatch_fields = mismatches  # Store the first mismatch set
+
+                        else:
+                            mismatch_fields = ["Customer not found in KNVP"]
+
+                        if not found_match:
+                            mismatched_rows.append(row)
+                            reasons.append(", ".join(mismatch_fields))
+
+                    df_mismatches = pd.DataFrame(mismatched_rows)
+                    if not df_mismatches.empty:
+                        df_mismatches["Mismatch Reason"] = reasons
+                        df_mismatches.index = range(1, len(df_mismatches) + 1)
+
+                    st.write(f"🔢 Customers in KNVV but NOT properly matched in KNVP: {len(df_mismatches)}")
+                    st.subheader("❗ Customers in KNVV but NOT in KNVP or mismatched")
+                    st.dataframe(df_mismatches)
+
+                    # Excel export function
+                    def to_excel(df):
+                        output = BytesIO()
+                        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                            df.to_excel(writer, index=False, sheet_name="Mismatches")
+                        output.seek(0)
+                        return output
+
+                    st.download_button("⬇️ Download Mismatch Report", to_excel(df_mismatches), file_name="knvv_knvp_mismatch.xlsx")
+
+                except Exception as e:
+                    st.error(f"❌ Error during processing: {e}")
