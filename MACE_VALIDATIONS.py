@@ -5,7 +5,7 @@ from io import BytesIO
 st.set_page_config(layout="wide")
 st.title("🔍 Customer Validation Tool")
 
-tabs = st.tabs(["📄 KNA1 vs KNVV", "📄 KNA1+KNVV vs MACE", "📄 KNVV vs KNVP"])
+tabs = st.tabs(["📄 KNA1 vs KNVV", "📄 KNA1+KNVV vs MACE", "📄 KNVV vs KNVP","📄 KNVP vs MACE_PARTNER"])
 
 
 # ---------- TAB 1: KNA1 vs KNVV ----------
@@ -228,7 +228,7 @@ with tabs[1]:
 # ---------- TAB 3: KNVV vs KNVP ----------
 # ---------- TAB 3: KNVV vs KNVP ----------
 with tabs[2]:
-    st.header("📤 Upload KNVV and KNVP Files")
+    st.header("📦 Upload KNVV and KNVP Files")
     knvv_file_tab3 = st.file_uploader("Upload KNVV Excel", type=["xlsx"], key="knvv_tab3")
     knvp_file = st.file_uploader("Upload KNVP Excel", type=["xlsx"], key="knvp")
 
@@ -311,6 +311,132 @@ with tabs[2]:
                         return output
 
                     st.download_button("⬇️ Download Mismatch Report", to_excel(df_mismatches), file_name="knvv_knvp_mismatch.xlsx")
+
+                except Exception as e:
+                    st.error(f"❌ Error during processing: {e}")
+with tabs[3]:
+    st.header("📦 Upload KNVP and MACE Partner Data Files")
+    knvp_file_tab4 = st.file_uploader("Upload KNVP Excel", type=["xlsx"], key="knvp_tab4")
+    mace_partner_file = st.file_uploader("Upload MACE Partner Excel", type=["xlsx"], key="mace_partner")
+
+    if knvp_file_tab4 and mace_partner_file:
+        if st.button("🔍 Compare KNVP vs MACE Partner", key="compare_knvp_mace_partner"):
+            with st.spinner("Processing..."):
+                try:
+                    df_knvp = pd.read_excel(knvp_file_tab4, header=4, skiprows=[5])
+                    df_mace = pd.read_excel(mace_partner_file)
+
+                    df_knvp.columns = df_knvp.columns.str.strip()
+                    df_mace.columns = df_mace.columns.str.strip()
+
+                    df_knvp = df_knvp.loc[:, ~df_knvp.columns.str.contains('^Unnamed', case=False)]
+                    df_knvp = clean_all_text_columns(df_knvp)
+                    df_mace = clean_all_text_columns(df_mace)
+
+                    column_mapping = {
+                        "Customer": "CUSTOMER_NATURAL_ID",
+                        "Sales Org.": "CUSTOMER_SALES_ORGANIZATION",
+                        "Distr. Channel": "CUSTOMER_DISTRIBUTION_CHANNEL",
+                        "Division": "CUSTOMER_DIVISION",
+                        "Partner Functn": "CUSTOMER_PARTNER_FUNCTION",
+                        "Customer Parent": "CUSTOMER_PARTNER_NATURAL_ID"
+                    }
+
+                    knvp_mismatches = []
+                    mace_mismatches = []
+                    mace_grouped = df_mace.groupby("CUSTOMER_NATURAL_ID")
+                    knvp_grouped = df_knvp.groupby("Customer")
+
+                    # ---------- KNVP vs MACE ----------
+                    for idx, row in df_knvp.iterrows():
+                        cust_id = str(row.get("Customer", "")).strip()
+                        found_match = False
+                        mismatched_cols = []
+
+                        if cust_id in mace_grouped.groups:
+                            mace_matches = mace_grouped.get_group(cust_id)
+                            for _, mace_row in mace_matches.iterrows():
+                                mismatched_cols_tmp = []
+                                for knvp_col, mace_col in column_mapping.items():
+                                    val_knvp = str(row.get(knvp_col, "")).strip()
+                                    val_mace = str(mace_row.get(mace_col, "")).strip()
+                                    if val_knvp != val_mace:
+                                        mismatched_cols_tmp.append(knvp_col)
+
+                                if not mismatched_cols_tmp:
+                                    found_match = True
+                                    break
+                                else:
+                                    if not mismatched_cols:
+                                        mismatched_cols = mismatched_cols_tmp
+                        else:
+                            mismatched_cols = ["Customer Not Found"]
+
+                        if not found_match:
+                            mismatch_row = row.copy()
+                            mismatch_row["Mismatch Columns"] = ", ".join(mismatched_cols)
+                            knvp_mismatches.append(mismatch_row)
+
+                    df_knvp_mismatches = pd.DataFrame(knvp_mismatches)
+                    if not df_knvp_mismatches.empty:
+                        df_knvp_mismatches.index = range(1, len(df_knvp_mismatches)+1)
+
+                    # ---------- MACE vs KNVP ----------
+                    for idx, row in df_mace.iterrows():
+                        cust_id = str(row.get("CUSTOMER_NATURAL_ID", "")).strip()
+                        found_match = False
+                        mismatched_cols = []
+
+                        if cust_id in knvp_grouped.groups:
+                            knvp_matches = knvp_grouped.get_group(cust_id)
+                            for _, knvp_row in knvp_matches.iterrows():
+                                mismatched_cols_tmp = []
+                                for knvp_col, mace_col in column_mapping.items():
+                                    val_knvp = str(knvp_row.get(knvp_col, "")).strip()
+                                    val_mace = str(row.get(mace_col, "")).strip()
+                                    if val_knvp != val_mace:
+                                        mismatched_cols_tmp.append(knvp_col)
+
+                                if not mismatched_cols_tmp:
+                                    found_match = True
+                                    break
+                                else:
+                                    if not mismatched_cols:
+                                        mismatched_cols = mismatched_cols_tmp
+                        else:
+                            mismatched_cols = ["Customer Not Found"]
+
+                        if not found_match:
+                            mismatch_row = row.copy()
+                            mismatch_row["Mismatch Columns"] = ", ".join(mismatched_cols)
+                            mace_mismatches.append(mismatch_row)
+
+                    df_mace_mismatches = pd.DataFrame(mace_mismatches)
+                    if not df_mace_mismatches.empty:
+                        df_mace_mismatches.index = range(1, len(df_mace_mismatches)+1)
+
+                    # Display
+                    st.write(f"🔢 KNVP rows not matching MACE: {len(df_knvp_mismatches)}")
+                    st.write(f"🔢 MACE rows not matching KNVP: {len(df_mace_mismatches)}")
+
+                    st.subheader("❗ Customers in KNVP but NOT in MACE Partner or mismatched")
+                    st.dataframe(df_knvp_mismatches)
+
+                    st.subheader("❗ Customer in MACE Partner Not in KNVP or mismatched")
+                    st.dataframe(df_mace_mismatches)
+
+                    # Export
+                    def download_excel(df1, df2):
+                        output = BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            df1.to_excel(writer, index=False, sheet_name='KNVP_Not_in_MACEpartner')
+                            df2.to_excel(writer, index=False, sheet_name='MACEpartner_Not_in_KNVP')
+                        output.seek(0)
+                        return output
+
+                    st.download_button("⬇️ Download KNVP-MACE comparision Report",
+                                       download_excel(df_knvp_mismatches, df_mace_mismatches),
+                                       file_name="knvp_mace_partner_mismatch.xlsx")
 
                 except Exception as e:
                     st.error(f"❌ Error during processing: {e}")
